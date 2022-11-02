@@ -15,7 +15,7 @@ int main(int argc, char *argv[]){
   if(argc != 3){
     exit(1);
   }
-  int fd = open(argv[1],O_RDONLY||O_WRONLY);
+  int fd = open(argv[1],O_RDWR);
   if(fd<0){
     printf("File error\n");
   }
@@ -25,10 +25,12 @@ int main(int argc, char *argv[]){
     printf("Status error\n");
   }
   size_t size = s.st_size;
-  char *addr = mmap(0,size,PROT_READ||PROT_WRITE,MAP_SHARED||MAP_SYNC,fd,0);
+  char *addr = mmap(0,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
   if(addr == MAP_FAILED){
     printf("MAP FAILED\n");
   }
-  printf("Address value please: %c\n",*addr);
+  for(int i=0; i<size; i++){
+    printf("Value: %c\n",addr[i]);
+  }
   return 0;
 }
