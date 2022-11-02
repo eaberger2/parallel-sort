@@ -10,9 +10,25 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <sys/sysinfo.h>
+
+#define THREAD_MAX get_nprocs()
+
+pthread_mutex_t lock;
+
+typedef struct file_data{
+  int total_records;
+  char *mapping;
+} f_data;
+
+//https://www.geeksforgeeks.org/merge-sort-using-multi-threading/
+void* merge_sort(void* arg){
+
+}
 
 int main(int argc, char *argv[]){
   if(argc != 3){
+    printf("Argument number error\n");
     exit(1);
   }
   int fd = open(argv[1],O_RDWR);
@@ -29,8 +45,17 @@ int main(int argc, char *argv[]){
   if(addr == MAP_FAILED){
     printf("MAP FAILED\n");
   }
-  for(int i=0; i<size; i++){
-    printf("Value: %c\n",addr[i]);
+
+  int total_records = size/100; //num of records in file (total bytes/100)
+  f_data *file_d;
+  file_d = malloc(sizeof(f_data)); //not sure if we need malloc but prob since we are sharing between threads
+  file_d->total_records = total_records;
+  file_d->mapping = addr;
+
+  pthread_t threads[THREAD_MAX];
+  for(int i=0; i<THREAD_MAX; i++){
+    pthread_create(&threads[i], NULL, merge_sort, (void*)file_d); //can only send pointers to the function so send a struct with all the info we need
   }
+
   return 0;
 }
