@@ -1,7 +1,0 @@
-#include <stdio.h>
-
-int
-main(){
-  printf("Processors online: %d\n",get_nprocs());
-  printf("Total processors: %d\n",get_nprocs_conf());
-}
