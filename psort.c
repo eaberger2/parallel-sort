@@ -67,7 +67,7 @@ int main(int argc, char *argv[]){
     printf("Status error\n");
   }
   size_t size = s.st_size;
-  char *addr = mmap(0,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
+  int *addr = mmap(0,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
   if(addr == MAP_FAILED){
     printf("MAP FAILED\n");
   }
