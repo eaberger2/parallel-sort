@@ -108,32 +108,38 @@ int main(int argc, char *argv[]){
   int fd = open(argv[1],O_RDWR);
   if(fd<0){
     printf("File error\n");
+    exit(1);
   }
   struct stat s;
   int status = fstat(fd,&s);
   if(status < 0){
     printf("Status error\n");
+    exit(1);
   }
   size_t size = s.st_size;
   char *address;
   address = (char *)mmap(0,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
   if(address == MAP_FAILED){
     printf("MAP FAILED\n");
+    exit(1);
   }
-  for(int i=0; i<size; i++){
-    record* new_record = malloc(sizeof(record));
-    int *key;
-    memcpy(key,address,4);
-    new_record->key = *key; 
-    address+=4;
-    memcpy(new_record->value,address,96);
-    address+=96;
-    mapping[i] = *new_record;
-  }
-  pthread_mutex_init(&part_lock,NULL);
-  pthread_mutex_init(&range_lock,NULL);
+  close(fd);
 
   int total_records = size/100; //num of records in file (total bytes/100)
+
+  mapping = (record *)malloc(total_records*sizeof(record));
+  record *curr = mapping;
+
+  //starts at first address in mapping and increments by size of record
+  for(char *val = address; val < address + size; val+=100){
+    curr->key = *(int *)val; //gets first int at address val
+    memcpy(curr->value,val+sizeof(int),96);
+    curr++;
+  }
+  printf("first record key and value: %d\n",mapping->key);
+  pthread_mutex_init(&part_lock,NULL);
+  pthread_mutex_init(&range_lock,NULL);
+  
   f_data *file_d;
   file_d = malloc(sizeof(f_data)); //not sure if we need malloc but prob since we are sharing between threads
   file_d->total_records = total_records;
