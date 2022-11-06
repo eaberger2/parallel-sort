@@ -22,39 +22,50 @@ typedef struct{
 
 typedef struct rec{
   int key;
-  int value[24];
+  char value[97];
 } record;
 
 record *mapping;
 
 void merge(int low, int mid, int high){
   // 100/4 = 25 so 25 ints per record
-  record* left = malloc(sizeof(record) *(mid-low+1));
+  /*record* left = malloc(sizeof(record) *(mid-low+1));
   record* right = malloc(sizeof(record) * (high-mid));
 
   int left_size = mid-low+1, right_size = high-mid, i, j;
 
   for(i = 0; i < left_size; i++){
-    left[i] = mapping->key;
-    mapping++;
+    left[i] = mapping[i];
   }
   for(i = 0; i < right_size; i++){
-    right[i] = mapping->key;
-    mapping++;
+    right[i] = mapping[i];
   }
 
 
   int k = low;
   i = j = 0;
-  /*
   while(i < left_size && j < right_size){
-    if(left[i] <= right[j]){
-      mapping[k++] = left[i++];
+    if(left->key <= right->key){
+      mapping[k++] = *(left)++;
+      i++;
     }
     else{
-      mapping[k++] = right[j++];
+      mapping[k++] = *(right)++;
+      j++;
     }
-  }*/
+  }
+
+  while(i < left_size){
+    mapping[k++] = *(left)++;
+  }
+
+  while(j < right_size){
+    mapping[k++] = *(right)++;
+  }
+
+  free(left);
+  free(right);
+  */
 }
 
 void merge_sort_more(int low, int high){
@@ -66,11 +77,7 @@ void merge_sort_more(int low, int high){
   }
 }
 
-//https://www.geeksforgeeks.org/merge-sort-using-multi-threading/
 void *merge_sort(void* arg){
-  //split the address space by the the number of threads and have each thread merge sort its own section
-  //when threads finish sorting their section have one of the threads merge its section and another, keep going until the sections are all merged -> prob 
-  //need to use semaphore for this because the merge sort is producing two sorted sections and the consumer is merging these sections
   f_data *new_arg = (f_data*)arg;
   int thread_part;
   pthread_mutex_lock(&part_lock);
@@ -108,11 +115,21 @@ int main(int argc, char *argv[]){
     printf("Status error\n");
   }
   size_t size = s.st_size;
-  mapping = mmap(0,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
-  if(mapping == MAP_FAILED){
+  char *address;
+  address = (char *)mmap(0,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
+  if(address == MAP_FAILED){
     printf("MAP FAILED\n");
   }
-
+  for(int i=0; i<size; i++){
+    record* new_record = malloc(sizeof(record));
+    int *key;
+    memcpy(key,address,4);
+    new_record->key = *key; 
+    address+=4;
+    memcpy(new_record->value,address,96);
+    address+=96;
+    mapping[i] = *new_record;
+  }
   pthread_mutex_init(&part_lock,NULL);
   pthread_mutex_init(&range_lock,NULL);
 
@@ -125,5 +142,6 @@ int main(int argc, char *argv[]){
     pthread_create(&threads[i], NULL, merge_sort, (void *)file_d); //can only send pointers to the function so send a struct with all the info we need
   }
   pthread_exit(NULL);
+  free(threads);
   return 0;
 }
