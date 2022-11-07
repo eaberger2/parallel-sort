@@ -15,11 +15,12 @@
 
 pthread_mutex_t part_lock;
 pthread_mutex_t range_lock;
+pthread_mutex_t merge_permission;
 int part = 0;
-int sorted[MAX_THREAD];
 
 typedef struct{
   int total_records;
+  sem_t *semaphores;
 } f_data;
 
 typedef struct rec{
@@ -84,6 +85,7 @@ void *merge_sort(void* arg){
   pthread_mutex_unlock(&part_lock);
   int total_records = 0;
   //round up total records
+  sem_t * semaphores = new_arg->semaphores;
   int rounded = 0;
   if(new_arg->total_records % THREAD_MAX != 0){
     total_records = new_arg->total_records + (THREAD_MAX - (new_arg->total_records % THREAD_MAX));
@@ -103,17 +105,27 @@ void *merge_sort(void* arg){
   }
   int mid = low + (high - low) / 2;
   pthread_mutex_unlock(&range_lock);
+
   if(low < high){ //make sure there isn't only one record in the section
     merge_sort_more(low, mid);
     merge_sort_more(mid + 1, high);
     merge(low, mid, high);
   }
 
-  sorted[thread_part] = 1;
+  printf("semaphore index: %d\n",thread_part/2);
+  sem_post(&semaphores[thread_part/2]); //post when done merging
+  printf("finished merging: %d\n",thread_part);
+  if(thread_part % 2 != 0){
+    printf("get rid of odd threads: %d\n",thread_part);
+    return (void *)0; //gets rid of odd threads
+  }
+  else{
+    sem_wait(&semaphores[thread_part/2]); //if even thread wait for odd thread to post
+  }
+
   if(thread_part % 2 == 0){
-    if(sorted[thread_part] == 1 && sorted[thread_part+1] == 1){
-      merge()
-    }
+    printf("Sections being merged: %d and %d\n",thread_part,thread_part+1);
+    merge(thread_part * (total_records / THREAD_MAX), (thread_part + 1) * (total_records / THREAD_MAX) - 1, (thread_part + 2) * (total_records / THREAD_MAX) -1);
   }
 
   return (void *)0;
@@ -159,17 +171,17 @@ int main(int argc, char *argv[]){
 
   pthread_mutex_init(&part_lock,NULL);
   pthread_mutex_init(&range_lock,NULL);
-
-
+  
   sem_t *semaphores = malloc(sizeof(sem_t) * (THREAD_MAX/2));
   //initialize semaphores
   for(int i=0; i<(THREAD_MAX/2); i++){
-    sem_init(&semaphores[i],0,-2); //initialize to -2 because threads that finish sorting will increment by 1 until there are two sections to be sorted
+    sem_init(&semaphores[i],0,0); //initialize to -2 because threads that finish sorting will increment by 1 until there are two sections to be sorted
   }
 
   f_data *file_d;
   file_d = malloc(sizeof(f_data)); //not sure if we need malloc but prob since we are sharing between threads
   file_d->total_records = total_records;
+  file_d->semaphores = semaphores; //send called function list of semaphores
   pthread_t *threads = malloc(sizeof(pthread_t) * THREAD_MAX);
   int i;
   for(i=0; i<THREAD_MAX; i++){
@@ -179,15 +191,14 @@ int main(int argc, char *argv[]){
 
   pthread_join(threads[--i],NULL);
 
-
-  /*int count = 0;
-  while(count < 32){
-    if(count%3 == 0){
-      printf("part: %d\n",count/3);
+  int count = 0;
+  while(count < 36){
+    if(count%6 == 0){
+      printf("part: %d\n",count/6);
     }
     printf("key: %d\n",mapping[count].key);
     count++;
-  }*/
+  }
 
   pthread_exit(NULL);
   free(mapping);
