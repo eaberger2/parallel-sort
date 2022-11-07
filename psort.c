@@ -13,14 +13,17 @@
 
 #define THREAD_MAX get_nprocs()
 
+void merge_sections(int numb, int sect_size, int total_records);
+
 pthread_mutex_t part_lock;
 pthread_mutex_t range_lock;
 pthread_mutex_t merge_permission;
+pthread_mutex_t semaphore_lock;
 int part = 0;
 
 typedef struct{
   int total_records;
-  sem_t *semaphores;
+  //sem_t *semaphores;
 } f_data;
 
 typedef struct rec{
@@ -85,7 +88,7 @@ void *merge_sort(void* arg){
   pthread_mutex_unlock(&part_lock);
   int total_records = 0;
   //round up total records
-  sem_t * semaphores = new_arg->semaphores;
+  //sem_t * semaphores = new_arg->semaphores;
   int rounded = 0;
   if(new_arg->total_records % THREAD_MAX != 0){
     total_records = new_arg->total_records + (THREAD_MAX - (new_arg->total_records % THREAD_MAX));
@@ -112,8 +115,10 @@ void *merge_sort(void* arg){
     merge(low, mid, high);
   }
 
-  printf("semaphore index: %d\n",thread_part/2);
+  /*pthread_mutex_lock(&semaphore_lock);
   sem_post(&semaphores[thread_part/2]); //post when done merging
+  pthread_mutex_unlock(&semaphore_lock);
+  //printf("semaphore %d value: %d\n",thread_part/2,val);
   printf("finished merging: %d\n",thread_part);
   if(thread_part % 2 != 0){
     printf("get rid of odd threads: %d\n",thread_part);
@@ -121,12 +126,9 @@ void *merge_sort(void* arg){
   }
   else{
     sem_wait(&semaphores[thread_part/2]); //if even thread wait for odd thread to post
-  }
-
-  if(thread_part % 2 == 0){
     printf("Sections being merged: %d and %d\n",thread_part,thread_part+1);
     merge(thread_part * (total_records / THREAD_MAX), (thread_part + 1) * (total_records / THREAD_MAX) - 1, (thread_part + 2) * (total_records / THREAD_MAX) -1);
-  }
+  }*/
 
   return (void *)0;
 }
@@ -171,25 +173,34 @@ int main(int argc, char *argv[]){
 
   pthread_mutex_init(&part_lock,NULL);
   pthread_mutex_init(&range_lock,NULL);
+  pthread_mutex_init(&range_lock,NULL);
   
-  sem_t *semaphores = malloc(sizeof(sem_t) * (THREAD_MAX/2));
+  /*sem_t *semaphores = malloc(sizeof(sem_t) * (THREAD_MAX/2));
   //initialize semaphores
   for(int i=0; i<(THREAD_MAX/2); i++){
-    sem_init(&semaphores[i],0,0); //initialize to -2 because threads that finish sorting will increment by 1 until there are two sections to be sorted
-  }
+    sem_init(&semaphores[i],0,-2); //initialize to -1 because threads that finish sorting will increment by 1 until there are two sections to be sorted
+  }*/
 
   f_data *file_d;
   file_d = malloc(sizeof(f_data)); //not sure if we need malloc but prob since we are sharing between threads
   file_d->total_records = total_records;
-  file_d->semaphores = semaphores; //send called function list of semaphores
+  //file_d->semaphores = semaphores; //send called function list of semaphores
   pthread_t *threads = malloc(sizeof(pthread_t) * THREAD_MAX);
   int i;
   for(i=0; i<THREAD_MAX; i++){
     pthread_create(&threads[i], NULL, merge_sort, (void *)file_d); //can only send pointers to the function so send a struct with all the info we need
-    printf("thread id? %ld\n",threads[i]);
   }
 
+  /*int new_total_records = total_records;
+  int rounded = 0;
+  if(new_total_records % THREAD_MAX != 0){
+    new_total_records = new_total_records + (THREAD_MAX - (total_records % THREAD_MAX));
+    rounded = 1;
+  }*/
+
   pthread_join(threads[--i],NULL);
+
+  merge_sections(THREAD_MAX,1,total_records);
 
   int count = 0;
   while(count < 36){
@@ -204,4 +215,19 @@ int main(int argc, char *argv[]){
   free(mapping);
   free(threads);
   return 0;
+}
+
+void merge_sections(int num, int sect_size, int total_records){
+  for(int i=0; i < num; i+=2){
+    int low = (i * (total_records/THREAD_MAX)) * sect_size; //lowest index
+    int high = (i+2) *(total_records/THREAD_MAX) * sect_size  - 1; //high index
+    int mid = low + (total_records/THREAD_MAX) * sect_size - 1; //midlle index
+    if(high >= total_records){
+      high = total_records - 1;
+    }
+    merge(low,mid,high);
+  }
+  if(num / 2 >= 1){
+    merge_sections(num/2,sect_size*2,total_records);
+  }
 }
