@@ -9,34 +9,36 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <sys/sysinfo.h>
+#include <errno.h>
 #include <semaphore.h> //need to compile code with -lpthread -lrt so maybe we do need a makefile
 
 #define THREAD_MAX get_nprocs()
 
+extern int errno;
+
 void merge_sections(int numb, int sect_size, int total_records);
 
 pthread_mutex_t part_lock;
-pthread_mutex_t range_lock;
-pthread_mutex_t merge_permission;
-pthread_mutex_t semaphore_lock;
-int part = 0;
 
+int part = 0;
+int cpus; 
 typedef struct{
   int total_records;
-  //sem_t *semaphores;
 } f_data;
 
 typedef struct rec{
   int key;
-  char value[97];
+  char value[96];
 } record;
 
 record *mapping;
 
 void merge(int low, int mid, int high){
   // 100/4 = 25 so 25 ints per record
-  record left[mid-low+1];
-  record right[high-mid];
+  //record left[mid-low+1];
+  //record right[high-mid];
+  record *left = malloc(sizeof(record)*(mid-low+1));
+  record *right = malloc(sizeof(record)*(high-mid));
 
   int left_size = mid-low+1, right_size = high-mid, i, j, k;
 
@@ -65,6 +67,8 @@ void merge(int low, int mid, int high){
   while(j < right_size){
     mapping[k++] = right[j++];
   }
+  free(left);
+  free(right);
   return;
 }
 
@@ -87,27 +91,13 @@ void *merge_sort(void* arg){
   part++;
   pthread_mutex_unlock(&part_lock);
   int total_records = 0;
-  //round up total records
-  //sem_t * semaphores = new_arg->semaphores;
-  int rounded = 0;
-  if(new_arg->total_records % THREAD_MAX != 0){
-    total_records = new_arg->total_records + (THREAD_MAX - (new_arg->total_records % THREAD_MAX));
-    rounded = 1;
-  }
-  else{
-    total_records = new_arg->total_records;
-  }
-  pthread_mutex_lock(&range_lock);
-  int low = thread_part * (total_records / THREAD_MAX); //index of first record in thread's section
-  int high;
-  if(thread_part == (THREAD_MAX - 1) && rounded){
-    high = (thread_part + 1) * (total_records / THREAD_MAX) - (1 + (THREAD_MAX - (new_arg->total_records % THREAD_MAX)));
-  }
-  else{
-    high = (thread_part + 1) * (total_records / THREAD_MAX) - 1; //index of last record in thread's section
+  total_records = new_arg->total_records;
+  int low = thread_part * (total_records / cpus); //index of first record in thread's section
+  int high = (thread_part + 1) * (total_records / cpus) - 1;
+  if(thread_part == (cpus - 1)){
+    high+= total_records%cpus;
   }
   int mid = low + (high - low) / 2;
-  pthread_mutex_unlock(&range_lock);
 
   if(low < high){ //make sure there isn't only one record in the section
     merge_sort_more(low, mid);
@@ -115,46 +105,31 @@ void *merge_sort(void* arg){
     merge(low, mid, high);
   }
 
-  /*pthread_mutex_lock(&semaphore_lock);
-  sem_post(&semaphores[thread_part/2]); //post when done merging
-  pthread_mutex_unlock(&semaphore_lock);
-  //printf("semaphore %d value: %d\n",thread_part/2,val);
-  printf("finished merging: %d\n",thread_part);
-  if(thread_part % 2 != 0){
-    printf("get rid of odd threads: %d\n",thread_part);
-    return (void *)0; //gets rid of odd threads
-  }
-  else{
-    sem_wait(&semaphores[thread_part/2]); //if even thread wait for odd thread to post
-    printf("Sections being merged: %d and %d\n",thread_part,thread_part+1);
-    merge(thread_part * (total_records / THREAD_MAX), (thread_part + 1) * (total_records / THREAD_MAX) - 1, (thread_part + 2) * (total_records / THREAD_MAX) -1);
-  }*/
-
   return (void *)0;
 }
 
 int main(int argc, char *argv[]){
   if(argc != 3){
-    printf("Argument number error\n");
-    exit(1);
+    fprintf(stderr,"An error has occurred\n");
+    exit(0);
   }
-  int fd = open(argv[1],O_RDWR);
+  int fd = open(argv[1],O_RDONLY);
   if(fd<0){
-    printf("File error\n");
-    exit(1);
+    fprintf(stderr,"An error has occurred\n");
+    exit(0);
   }
   struct stat s;
   int status = fstat(fd,&s);
   if(status < 0){
-    printf("Status error\n");
-    exit(1);
+    fprintf(stderr,"An error has occurred\n");
+    exit(0);
   }
   size_t size = s.st_size;
   char *address;
-  address = (char *)mmap(0,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
+  address = (char *)mmap(NULL,size,PROT_READ,MAP_SHARED,fd,0);
   if(address == MAP_FAILED){
-    printf("MAP FAILED\n");
-    exit(1);
+    fprintf(stderr,"An error has occurred\n");
+    exit(0);
   }
   close(fd);
 
@@ -166,54 +141,69 @@ int main(int argc, char *argv[]){
   //starts at first address in mapping and increments by size of record
   for(char *val = address; val < address + size; val+=100){
     curr->key = *(int *)val; //gets first int at address val
-    //printf("Key: %d\n",curr->key);
     memcpy(curr->value,val+sizeof(int),96);
     curr++;
   }
+  munmap(address,size);
 
-  pthread_mutex_init(&part_lock,NULL);
-  pthread_mutex_init(&range_lock,NULL);
-  pthread_mutex_init(&range_lock,NULL);
-  
-  /*sem_t *semaphores = malloc(sizeof(sem_t) * (THREAD_MAX/2));
-  //initialize semaphores
-  for(int i=0; i<(THREAD_MAX/2); i++){
-    sem_init(&semaphores[i],0,-2); //initialize to -1 because threads that finish sorting will increment by 1 until there are two sections to be sorted
-  }*/
-
+  cpus = total_records < THREAD_MAX ? total_records : THREAD_MAX;
+  if(total_records > THREAD_MAX){
   f_data *file_d;
   file_d = malloc(sizeof(f_data)); //not sure if we need malloc but prob since we are sharing between threads
   file_d->total_records = total_records;
-  //file_d->semaphores = semaphores; //send called function list of semaphores
-  pthread_t *threads = malloc(sizeof(pthread_t) * THREAD_MAX);
+  pthread_t *threads = malloc(sizeof(pthread_t) * cpus);
   int i;
-  for(i=0; i<THREAD_MAX; i++){
+  for(i=0; i<cpus; i++){
     pthread_create(&threads[i], NULL, merge_sort, (void *)file_d); //can only send pointers to the function so send a struct with all the info we need
   }
 
-  /*int new_total_records = total_records;
-  int rounded = 0;
-  if(new_total_records % THREAD_MAX != 0){
-    new_total_records = new_total_records + (THREAD_MAX - (total_records % THREAD_MAX));
-    rounded = 1;
-  }*/
+  for(i=0; i<cpus; i++){
+    pthread_join(threads[i],NULL);
+  }
 
-  pthread_join(threads[--i],NULL);
+  merge_sections(cpus,1,total_records);
+  free(threads);
+  }
+  else{
+    merge_sort_more(0,total_records-1);
+  }
 
-  merge_sections(THREAD_MAX,1,total_records);
+  //WRITE TO OUTPUT FILE
+  fd = open(argv[2], O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
+  if(fd<0){
+    fprintf(stderr,"An error has occurred\n");
+    exit(0);
+  }
+  lseek(fd, size-1, SEEK_SET);
+  int w = write(fd,"",1);
+  if(w != 1){
+    fprintf(stderr,"An error has occurred\n");
+    exit(0);
+  }
+  char *output_file;
+  output_file = (char *)mmap(NULL,size,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
+  if(address == MAP_FAILED){
+    fprintf(stderr,"An error has occurred\n");
+    exit(0);
+  }
+  // char * records_array = (char *)&mapping[0]; //initialize to first thread in array of structs
+  // for(int i=0; i<size; i++){
+  //   output_file[i] = records_array[i];
+  // }
+  memcpy(output_file, mapping, size);
+  msync(output_file,size,MS_SYNC);
+  munmap(output_file,size);
+  fsync(fd);
+  close(fd);
 
-  int count = 0;
-  while(count < 36){
-    if(count%6 == 0){
-      printf("part: %d\n",count/6);
-    }
+  /*int count = 0;
+  while(count < 10){
     printf("key: %d\n",mapping[count].key);
     count++;
-  }
+  }*/
 
   pthread_exit(NULL);
   free(mapping);
-  free(threads);
   return 0;
 }
 
