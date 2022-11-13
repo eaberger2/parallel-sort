@@ -1,2 +1,2 @@
 # parallel-sort
-# Merge sort key value pairs with multiple threads.
+Merge sort key value pairs with multiple threads.
