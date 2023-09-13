@@ -3,8 +3,8 @@ Merge sorts key value pairs with multiple threads and semaphores to protect vari
 
 The majority of the sorting is done in the psort.c file. This program was run on a linux machine and uses GNU extensions such as get_nprocs.
 
-Compile
-`gcc c -o psort psort.c`
+Compile <br>
+`> gcc c -o psort psort.c`
 
-Run
-`psort`
+Run <br>
+`> psort`
